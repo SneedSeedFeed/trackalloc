@@ -1,19 +1,11 @@
-# Peak Alloc
+# trackalloc
 
-Peak Alloc is a dead simple and willingly low overhead allocator for rust 
+Trackalloc is a dead simple and willingly low overhead allocator for rust 
 which allows you to track (and consult) the amount of memory that is being
 allocated to your process as well as the *maximum* amount of memory that has
-been allocatd to your process over the course of its life.
+been allocated to your process over the course of its life.
 
-### Note 1:
-When I mean that peak alloc is low overhead, I mean that all it ever maintains,
-is a pair of two atomic usize. So the overhead is low..._but there *is* and 
-overhead_ because of the atomic number manipulations.
-
-### Note 2: 
-The peak allocator is really just a shim around the system allocator. The
-bulk of its work is delegated to the system allocator and all `PeakAlloc`
-does is to maintain the atomic counters.
+It is a fork of [peak_alloc](https://crates.io/crates/peak_alloc) by Xavier Gillard that just updates it to Rust 2024 and adds a function that spawns a thread that will auto record the current memory usage every N nanoseconds. It also lets you choose your flavour of allocator instead of being tied to System. They did the hard work not me!
 
 ## Usage
 In your `Cargo.toml`, you should add the following line to your dependencies
@@ -21,16 +13,17 @@ section.
 
 ```toml
 [dependencies]
-peak_alloc = "0.2.0"
+trackalloc = "0.4.0"
 ```
 
 Then in your main code, you will simply use it as shown below:
 
 ```rust
-use peak_alloc::PeakAlloc;
+use track_alloc::PeakAlloc;
+use std::alloc::System;
 
 #[global_allocator]
-static PEAK_ALLOC: PeakAlloc = PeakAlloc;
+static PEAK_ALLOC: PeakAlloc<System> = PeakAlloc::system();
 
 fn main() {
 	// Do your funky stuff...

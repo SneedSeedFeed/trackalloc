@@ -51,7 +51,7 @@ static PEAK: AtomicUsize = AtomicUsize::new(0);
 ///
 /// ```
 /// use std::alloc::System;
-/// use peak_alloc::PeakAlloc;
+/// use trackalloc::PeakAlloc;
 ///
 /// #[global_allocator]
 /// static PEAK_ALLOC: PeakAlloc<System> = PeakAlloc::system();
