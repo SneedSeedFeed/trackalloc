@@ -7,7 +7,7 @@ authors = [
 ]
 edition = "2024"
 description = "A fork of peak_alloc"
-repository = "https://github.com/xgillard/peak_alloc"
+repository = "https://github.com/SneedSeedFeed/trackalloc"
 readme = "README.md"
 license = "MIT"
 keywords = ["memory-usage", "peak-memory", "allocator"]
