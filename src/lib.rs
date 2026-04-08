@@ -100,7 +100,7 @@ impl MemTrackCanceller {
     }
 }
 
-/// Spawn a thread that will attempt to track memory usage every
+/// Spawn a thread that will attempt to track memory usage every x nanoseconds
 pub fn run_tracker_thread(interval_ns: u128) -> (MemTrackCanceller, JoinHandle<MemReport>) {
     _run_tracker_thread(MemReport {
         usage: Vec::new(),
@@ -108,6 +108,7 @@ pub fn run_tracker_thread(interval_ns: u128) -> (MemTrackCanceller, JoinHandle<M
     })
 }
 
+/// Spawn a thread that will attempt to track memory usage every x nanoseconds. Space is reserved in the reporter for `capacity` entries
 pub fn run_tracker_thread_with_capacity(
     interval_ns: u128,
     capacity: usize,
