@@ -23,6 +23,9 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc::TryRecvError;
+use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 /// This atomic counter monitors the amount of memory (in bytes) that is
 /// currently allocated for this process.
@@ -71,6 +74,48 @@ impl PeakAlloc<System> {
     pub const fn system() -> PeakAlloc<System> {
         Self { alloc: System }
     }
+}
+
+pub struct MemReport {
+    pub usage: Vec<(Instant, usize)>,
+    pub target_interval_ns: u128,
+}
+
+impl MemReport {
+    fn log(&mut self) {
+        let time = Instant::now();
+        let usage = CURRENT.load(Ordering::Relaxed);
+        self.usage.push((time, usage))
+    }
+}
+
+pub struct MemTrackCanceller {
+    sender: std::sync::mpsc::Sender<()>,
+}
+
+impl MemTrackCanceller {
+    pub fn cancel(self) {
+        self.sender.send(()).ok();
+    }
+}
+
+pub fn run_tracker_thread(interval_ns: u128) -> (MemTrackCanceller, JoinHandle<MemReport>) {
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let handle = std::thread::spawn(move || {
+        let mut report = MemReport {
+            usage: Vec::new(),
+            target_interval_ns: interval_ns,
+        };
+
+        while let Err(TryRecvError::Empty) = rx.try_recv() {
+            report.log();
+            std::thread::sleep(Duration::from_nanos_u128(interval_ns));
+        }
+
+        report
+    });
+
+    (MemTrackCanceller { sender: tx }, handle)
 }
 
 impl<A> PeakAlloc<A> {
@@ -162,7 +207,7 @@ where
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        self.alloc.dealloc(ptr, layout);
+        unsafe { self.alloc.dealloc(ptr, layout) };
         self.sub_memory(layout.size());
     }
 
@@ -170,13 +215,13 @@ where
         let size = layout.size();
 
         // SAFETY: the safety contract for `alloc` must be upheld by the caller.
-        let ret = self.alloc.alloc(layout);
+        let ret = unsafe { self.alloc.alloc(layout) };
         if !ret.is_null() {
             self.add_memory(size);
 
             // SAFETY: as allocation succeeded, the region from `ptr`
             // of size `size` is guaranteed to be valid for writes.
-            std::ptr::write_bytes(ret, 0, size);
+            unsafe { std::ptr::write_bytes(ret, 0, size) };
         }
         ret
     }
@@ -186,18 +231,18 @@ where
 
         // SAFETY: the caller must ensure that the `new_size` does not overflow.
         // `layout.align()` comes from a `Layout` and is thus guaranteed to be valid.
-        let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
+        let new_layout = unsafe { Layout::from_size_align_unchecked(new_size, layout.align()) };
 
         // SAFETY: the caller must ensure that `new_layout` is greater than zero.
-        let new_ptr = self.alloc.alloc(new_layout);
+        let new_ptr = unsafe { self.alloc.alloc(new_layout) };
         if !new_ptr.is_null() {
             self.add_memory(new_size);
 
             // SAFETY: the previously allocated block cannot overlap the newly allocated block.
             // The safety contract for `dealloc` must be upheld by the caller.
-            std::ptr::copy_nonoverlapping(ptr, new_ptr, std::cmp::min(size, new_size));
+            unsafe { std::ptr::copy_nonoverlapping(ptr, new_ptr, std::cmp::min(size, new_size)) };
 
-            self.alloc.dealloc(ptr, layout);
+            unsafe { self.alloc.dealloc(ptr, layout) };
             self.sub_memory(size);
         }
         new_ptr
