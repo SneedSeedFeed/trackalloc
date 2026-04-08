@@ -89,6 +89,7 @@ impl MemReport {
     }
 }
 
+/// Holds the cancellation for the memory tracking thread, use [`Self::cancel`] to drop the thread so it can exit
 pub struct MemTrackCanceller {
     sender: std::sync::mpsc::Sender<()>,
 }
@@ -99,39 +100,33 @@ impl MemTrackCanceller {
     }
 }
 
+/// Spawn a thread that will attempt to track memory usage every
 pub fn run_tracker_thread(interval_ns: u128) -> (MemTrackCanceller, JoinHandle<MemReport>) {
-    let (tx, rx) = std::sync::mpsc::channel::<()>();
-    let handle = std::thread::spawn(move || {
-        let mut report = MemReport {
-            usage: Vec::new(),
-            target_interval_ns: interval_ns,
-        };
-
-        while let Err(TryRecvError::Empty) = rx.try_recv() {
-            report.log();
-            std::thread::sleep(Duration::from_nanos_u128(interval_ns));
-        }
-
-        report
-    });
-
-    (MemTrackCanceller { sender: tx }, handle)
+    _run_tracker_thread(MemReport {
+        usage: Vec::new(),
+        target_interval_ns: interval_ns,
+    })
 }
 
 pub fn run_tracker_thread_with_capacity(
     interval_ns: u128,
     capacity: usize,
 ) -> (MemTrackCanceller, JoinHandle<MemReport>) {
+    _run_tracker_thread(MemReport {
+        usage: Vec::with_capacity(capacity),
+        target_interval_ns: interval_ns,
+    })
+}
+
+fn _run_tracker_thread(report: MemReport) -> (MemTrackCanceller, JoinHandle<MemReport>) {
     let (tx, rx) = std::sync::mpsc::channel::<()>();
     let handle = std::thread::spawn(move || {
-        let mut report = MemReport {
-            usage: Vec::with_capacity(capacity),
-            target_interval_ns: interval_ns,
-        };
+        let mut report = report;
 
+        let duration = Duration::from_nanos_u128(report.target_interval_ns);
         while let Err(TryRecvError::Empty) = rx.try_recv() {
             report.log();
-            std::thread::sleep(Duration::from_nanos_u128(interval_ns));
+            std::thread::sleep(duration);
         }
 
         report
