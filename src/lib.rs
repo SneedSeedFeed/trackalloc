@@ -78,7 +78,7 @@ impl PeakAlloc<System> {
 
 pub struct MemReport {
     pub usage: Vec<(Instant, usize)>,
-    pub target_interval_ns: u128,
+    pub target_interval: Duration,
 }
 
 impl MemReport {
@@ -101,21 +101,21 @@ impl MemTrackCanceller {
 }
 
 /// Spawn a thread that will attempt to track memory usage every x nanoseconds
-pub fn run_tracker_thread(interval_ns: u128) -> (MemTrackCanceller, JoinHandle<MemReport>) {
+pub fn run_tracker_thread(interval: Duration) -> (MemTrackCanceller, JoinHandle<MemReport>) {
     _run_tracker_thread(MemReport {
         usage: Vec::new(),
-        target_interval_ns: interval_ns,
+        target_interval: interval,
     })
 }
 
 /// Spawn a thread that will attempt to track memory usage every x nanoseconds. Space is reserved in the reporter for `capacity` entries
 pub fn run_tracker_thread_with_capacity(
-    interval_ns: u128,
+    interval: Duration,
     capacity: usize,
 ) -> (MemTrackCanceller, JoinHandle<MemReport>) {
     _run_tracker_thread(MemReport {
         usage: Vec::with_capacity(capacity),
-        target_interval_ns: interval_ns,
+        target_interval: interval,
     })
 }
 
@@ -124,10 +124,9 @@ fn _run_tracker_thread(report: MemReport) -> (MemTrackCanceller, JoinHandle<MemR
     let handle = std::thread::spawn(move || {
         let mut report = report;
 
-        let duration = Duration::from_nanos_u128(report.target_interval_ns);
         while let Err(TryRecvError::Empty) = rx.try_recv() {
             report.log();
-            std::thread::sleep(duration);
+            std::thread::sleep(report.target_interval);
         }
 
         report
