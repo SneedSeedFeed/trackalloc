@@ -1,15 +1,16 @@
 [package]
-name        = "peak_alloc"
-version     = "0.3.1"
-authors     = ["Xavier Gillard <xavier.gillard@uclouvain.be>"]
-edition     = "2018"
-description = "An allocator to keep track of (the max) allocated memory"
-repository  = "https://github.com/xgillard/peak_alloc"
-readme      = "README.md"
-license     = "MIT"
-keywords    = ["memory-usage", "peak-memory", "allocator"]
-categories  = ["memory-management"]
+name = "trackalloc"
+version = "0.4.0"
+authors = [
+    "Adam Stopher <adam.stopher@protonmail.com>",
+    "Xavier Gillard <xavier.gillard@uclouvain.be>",
+]
+edition = "2024"
+description = "A fork of peak_alloc"
+repository = "https://github.com/xgillard/peak_alloc"
+readme = "README.md"
+license = "MIT"
+keywords = ["memory-usage", "peak-memory", "allocator"]
+categories = ["memory-management"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]

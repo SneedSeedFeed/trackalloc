@@ -36,8 +36,8 @@ static PEAK: AtomicUsize = AtomicUsize::new(0);
 /// consumption at runtime.
 ///
 /// # Note
-/// The peak allocator is really just a shim around the system allocator. The
-/// bulk of its work is delegated to the system allocator and all `PeakAlloc`
+/// The peak allocator is really just a shim around the chosen allocator. The
+/// bulk of its work is delegated to the allocator and all `PeakAlloc`
 /// does is to maintain the atomic counters.
 ///
 /// # Example
@@ -47,10 +47,11 @@ static PEAK: AtomicUsize = AtomicUsize::new(0);
 /// useful), you just call methods on the static variable you declared.
 ///
 /// ```
+/// use std::alloc::System;
 /// use peak_alloc::PeakAlloc;
 ///
 /// #[global_allocator]
-/// static PEAK_ALLOC: PeakAlloc = PeakAlloc;
+/// static PEAK_ALLOC: PeakAlloc<System> = PeakAlloc::system();
 ///
 /// fn main() {
 ///     // Do your funky stuff...
@@ -62,9 +63,21 @@ static PEAK: AtomicUsize = AtomicUsize::new(0);
 /// }
 /// ```
 #[derive(Debug, Default, Copy, Clone)]
-pub struct PeakAlloc;
+pub struct PeakAlloc<A> {
+    alloc: A,
+}
 
-impl PeakAlloc {
+impl PeakAlloc<System> {
+    pub const fn system() -> PeakAlloc<System> {
+        Self { alloc: System }
+    }
+}
+
+impl<A> PeakAlloc<A> {
+    pub const fn new(alloc: A) -> PeakAlloc<A> {
+        Self { alloc }
+    }
+
     /// Returns the number of bytes that are currently allocated to the process
     pub fn current_usage(&self) -> usize {
         CURRENT.load(Ordering::Relaxed)
@@ -136,9 +149,12 @@ impl PeakAlloc {
 /// useable as a global allocator (with `#[global_allocator]` attribute).
 ///
 /// No funky stuff is done below.
-unsafe impl GlobalAlloc for PeakAlloc {
+unsafe impl<A> GlobalAlloc for PeakAlloc<A>
+where
+    A: GlobalAlloc,
+{
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ret = System.alloc(layout);
+        let ret = unsafe { self.alloc.alloc(layout) };
         if !ret.is_null() {
             self.add_memory(layout.size())
         }
@@ -146,7 +162,7 @@ unsafe impl GlobalAlloc for PeakAlloc {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        System.dealloc(ptr, layout);
+        self.alloc.dealloc(ptr, layout);
         self.sub_memory(layout.size());
     }
 
@@ -154,7 +170,7 @@ unsafe impl GlobalAlloc for PeakAlloc {
         let size = layout.size();
 
         // SAFETY: the safety contract for `alloc` must be upheld by the caller.
-        let ret = System.alloc(layout);
+        let ret = self.alloc.alloc(layout);
         if !ret.is_null() {
             self.add_memory(size);
 
@@ -173,7 +189,7 @@ unsafe impl GlobalAlloc for PeakAlloc {
         let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
 
         // SAFETY: the caller must ensure that `new_layout` is greater than zero.
-        let new_ptr = System.alloc(new_layout);
+        let new_ptr = self.alloc.alloc(new_layout);
         if !new_ptr.is_null() {
             self.add_memory(new_size);
 
@@ -181,7 +197,7 @@ unsafe impl GlobalAlloc for PeakAlloc {
             // The safety contract for `dealloc` must be upheld by the caller.
             std::ptr::copy_nonoverlapping(ptr, new_ptr, std::cmp::min(size, new_size));
 
-            System.dealloc(ptr, layout);
+            self.alloc.dealloc(ptr, layout);
             self.sub_memory(size);
         }
         new_ptr
@@ -190,16 +206,18 @@ unsafe impl GlobalAlloc for PeakAlloc {
 
 #[cfg(test)]
 mod tests {
+    use std::alloc::System;
+
     use crate::{CURRENT, PEAK};
 
     #[global_allocator]
-    static PEAK_ALLOC: crate::PeakAlloc = crate::PeakAlloc;
+    static PEAK_ALLOC: crate::PeakAlloc<System> = crate::PeakAlloc::system();
 
     #[test]
     fn test_issue_4() {
         // neutralize process allocated memory etc.. (makes it easier to reason about)
         CURRENT.store(0, std::sync::atomic::Ordering::Relaxed);
-        PEAK.store   (0, std::sync::atomic::Ordering::Relaxed);
+        PEAK.store(0, std::sync::atomic::Ordering::Relaxed);
 
         // initially both
         assert_eq!(0, PEAK_ALLOC.current_usage());
@@ -210,11 +228,11 @@ mod tests {
             let mut data = vec![0_u32; 1000];
 
             assert_eq!(4000, PEAK_ALLOC.current_usage());
-            assert_eq!(4000, PEAK_ALLOC.peak_usage());     // before the fix, this would fail
+            assert_eq!(4000, PEAK_ALLOC.peak_usage()); // before the fix, this would fail
 
             let mut tot = 0;
             for (i, x) in data.iter_mut().enumerate() {
-                *x   = i as u32;
+                *x = i as u32;
                 tot += i as u32;
             }
 
@@ -222,7 +240,7 @@ mod tests {
             // drop the allocated data
         }
 
-        assert_eq!(0,    PEAK_ALLOC.current_usage());
+        assert_eq!(0, PEAK_ALLOC.current_usage());
         assert_eq!(4000, PEAK_ALLOC.peak_usage());
     }
 }
