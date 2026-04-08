@@ -118,6 +118,28 @@ pub fn run_tracker_thread(interval_ns: u128) -> (MemTrackCanceller, JoinHandle<M
     (MemTrackCanceller { sender: tx }, handle)
 }
 
+pub fn run_tracker_thread_with_capacity(
+    interval_ns: u128,
+    capacity: usize,
+) -> (MemTrackCanceller, JoinHandle<MemReport>) {
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    let handle = std::thread::spawn(move || {
+        let mut report = MemReport {
+            usage: Vec::with_capacity(capacity),
+            target_interval_ns: interval_ns,
+        };
+
+        while let Err(TryRecvError::Empty) = rx.try_recv() {
+            report.log();
+            std::thread::sleep(Duration::from_nanos_u128(interval_ns));
+        }
+
+        report
+    });
+
+    (MemTrackCanceller { sender: tx }, handle)
+}
+
 impl<A> PeakAlloc<A> {
     pub const fn new(alloc: A) -> PeakAlloc<A> {
         Self { alloc }
